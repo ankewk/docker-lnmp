@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # PHP服务 - 开发模式优化
+  php:
+    environment:
+      # 开发环境PHP配置
+      PHP_IDE_CONFIG: "serverName=lnmp"
+      XDEBUG_MODE: "develop,debug"
+      XDEBUG_CONFIG: "client_host=host.docker.internal"
+      # 文件监控配置
+      PHP_OPCACHE_ENABLE: "0"
+      PHP_OPCACHE_VALIDATE_TIMESTAMPS: "1"
+      # 错误显示配置
+      PHP_DISPLAY_ERRORS: "On"
+      PHP_DISPLAY_STARTUP_ERRORS: "On"
+      PHP_LOG_ERRORS: "On"
+      PHP_ERROR_REPORTING: "E_ALL"
+    volumes:
+      # 代码目录挂载（已存在）
+      - ./www:/var/www/html
+      # 开发工具目录
+      - ./dev-tools:/var/www/dev-tools
+      # 日志目录
+      - ./logs/php:/var/log/php
+      # 临时文件目录
+      - ./tmp/php:/tmp/php
+    # 开发模式下的额外配置
+    command: >
+      sh -c "
+        # 创建必要的目录
+        mkdir -p /var/log/php /tmp/php /var/www/dev-tools &&
+        # 设置文件权限
+        chown -R www-data:www-data /var/www/html /var/log/php /tmp/php /var/www/dev-tools &&
+        # 启动PHP-FPM
+        php-fpm
+      "
+
+  # Nginx后端服务 - 开发模式优化
+  nginx-backend:
+    environment:
+      # 开发环境配置
+      NGINX_ENV: "development"
+    volumes:
+      # 代码目录挂载（已存在）
+      - ./www:/var/www/html
+      # 开发工具目录
+      - ./dev-tools:/var/www/dev-tools
+      # 日志目录
+      - ./logs/nginx:/var/log/nginx
+    # 开发模式下的额外配置
+    command: >
+      sh -c "
+        # 创建必要的目录
+        mkdir -p /var/log/nginx /var/www/dev-tools &&
+        # 设置文件权限
+        chown -R nginx:nginx /var/log/nginx /var/www/dev-tools &&
+        # 启动Nginx
+        nginx -g 'daemon off;'
+      "
+
+  # 文件监控服务（可选）
+  file-watcher:
+    image: alpine:latest
+    container_name: lnmp_file_watcher
+    volumes:
+      - ./www:/var/www/html:ro
+      - ./dev-tools:/var/www/dev-tools
+    command: >
+      sh -c "
+        apk add --no-cache inotify-tools &&
+        echo '文件监控服务已启动，监控目录: /var/www/html' &&
+        inotifywait -m -r -e modify,create,delete,move /var/www/html |
+        while read path action file; do
+          echo \"[$(date '+%Y-%m-%d %H:%M:%S')] 文件变化: $action $path$file\" >> /var/www/dev-tools/file-changes.log
+        done
+      "
+    networks:
+      - lnmp_network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+  # 开发辅助服务
+  dev-helper:
+    image: alpine:latest
+    container_name: lnmp_dev_helper
+    volumes:
+      - ./www:/var/www/html
+      - ./dev-tools:/var/www/dev-tools
+      - ./logs:/var/log
+    command: >
+      sh -c "
+        apk add --no-cache curl jq &&
+        echo '开发辅助服务已启动' &&
+        # 创建开发工具目录
+        mkdir -p /var/www/dev-tools &&
+        # 创建健康检查脚本
+        echo '#!/bin/sh' > /var/www/dev-tools/health-check.sh &&
+        echo 'curl -f http://nginx-backend/health || exit 1' >> /var/www/dev-tools/health-check.sh &&
+        chmod +x /var/www/dev-tools/health-check.sh &&
+        # 保持容器运行
+        tail -f /dev/null
+      "
+    networks:
+      - lnmp_network
+    restart: unless-stopped
+    profiles:
+      - dev 

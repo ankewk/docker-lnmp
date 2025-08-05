@@ -1,0 +1,23 @@
+{
+    "name": "lnmp/grpc-example",
+    "description": "gRPC 示例项目",
+    "type": "project",
+    "require": {
+        "php": ">=7.4",
+        "grpc/grpc": "^1.42",
+        "google/protobuf": "^3.19"
+    },
+    "autoload": {
+        "psr-4": {
+            "Hello\\": "generated/"
+        }
+    },
+    "scripts": {
+        "generate": "protoc --php_out=generated --grpc_out=generated --plugin=protoc-gen-grpc=/usr/local/bin/grpc_php_plugin hello.proto",
+        "server": "php server.php",
+        "client": "php client.php"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+} 
